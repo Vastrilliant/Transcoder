@@ -1,0 +1,117 @@
+name: doctor-bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag of the queue release holding input.bundle"
+        required: true
+        type: string
+
+      output_format:
+        description: "Texture output format"
+        required: false
+        default: "RGBA32"
+        type: choice
+        options:
+          - RGBA32
+          - ETC2
+          - ETC2_RGB
+          - ETC2_RGBA8
+          - ASTC_RGBA_4x4
+          - ASTC_RGBA_6x6
+          - ASTC_RGBA_8x8
+
+# Least-privilege: this token can only touch this repo's releases/contents,
+# not your account broadly. Still, treat the PAT the tweak uses to trigger
+# this workflow as sensitive — see BundleDoctorService.m notes.
+permissions:
+  contents: write
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # native/etcpak/build only depends on the vendored etcpak sources, not
+      # on anything that changes per-run (input.bundle, output_format) - so
+      # it's safe to cache keyed on those sources. dotnet build's
+      # BuildVendoredEtcpakEncoder MSBuild target always invokes cmake, but a
+      # cache hit here means that's just a fast incremental no-op (cmake/make
+      # see nothing changed) instead of a cold compile of ProcessRGB.cpp.
+      - name: Cache vendored etcpak build
+        uses: actions/cache@v4
+        with:
+          path: BundleDoctor/native/etcpak/build
+          key: etcpak-build-${{ runner.os }}-${{ hashFiles('BundleDoctor/native/etcpak/**') }}
+
+      # Same reasoning as the etcpak cache above, for the vendored astcenc
+      # build. This one is the more valuable cache hit of the two - a cold
+      # astcenc build compiles the whole compressor core (endpoint/weight
+      # search, partitioning tables, etc.), not just ProcessRGB.cpp.
+      - name: Cache vendored astcenc build
+        uses: actions/cache@v4
+        with:
+          path: BundleDoctor/native/astcenc/build
+          key: astcenc-build-${{ runner.os }}-${{ hashFiles('BundleDoctor/native/astcenc/**') }}
+
+      - name: Restore & build converter
+        run: dotnet build BundleDoctor/BundleDoctor.csproj -c Release -o build
+
+      - name: Fetch input.bundle from the queue release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "input.bundle" \
+            --output input.bundle
+
+      # original.bundle is optional - the client only uploads it when
+      # UnityCacheLocator resolved a matching stock bundle on-device (see
+      # BundleDoctorService.m). `gh release download` exits non-zero when its
+      # --pattern matches nothing, so that failure is swallowed here and
+      # absence is just "no shader-restore pass this run", not a job failure.
+      - name: Fetch original.bundle from the queue release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "original.bundle" \
+            --output original.bundle || true
+
+      - name: Run BundleDoctor
+        env:
+          OUTPUT_FORMAT: ${{ inputs.output_format }}
+        run: |
+          FORMAT="${OUTPUT_FORMAT:-RGBA32}"
+          if [ -f original.bundle ]; then
+            dotnet build/BundleDoctor.dll input.bundle output.bundle --original original.bundle "$FORMAT"
+          else
+            echo "No original.bundle on this release - running without shader restore."
+            dotnet build/BundleDoctor.dll input.bundle output.bundle "$FORMAT"
+          fi
+
+      - name: Upload output.bundle back onto the same release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.release_tag }}" output.bundle \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+      - name: Mark Done Signal
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo done > done.marker
+          gh release upload "${{ inputs.release_tag }}" done.marker \
+            --repo "${{ github.repository }}" \
+            --clobber

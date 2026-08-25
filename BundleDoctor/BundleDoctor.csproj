@@ -1,0 +1,101 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>BundleDoctor</AssemblyName>
+    <RootNamespace>BundleDoctor</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- ETC2 is implemented by the vendored wolfpld/etcpak C++ encoder (a
+       minimal ProcessRGB.cpp-only build - see native/etcpak/CMakeLists.txt).
+       The MSBuild hooks build it automatically when cmake is available and copy
+       the resulting executable beside BundleDoctor for published runs. -->
+  <Target Name="BuildVendoredEtcpakEncoder" BeforeTargets="Build">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/native/etcpak&quot; -B &quot;$(MSBuildProjectDirectory)/native/etcpak/build&quot; -DCMAKE_BUILD_TYPE=Release" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/native/etcpak/build&quot; --config Release --parallel" />
+  </Target>
+
+  <Target Name="CopyVendoredEtcpakEncoderToPublish" AfterTargets="Publish">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode')">
+      <PublishedEtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe')">
+      <PublishedEtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishedEtcpakBinary)" DestinationFolder="$(PublishDir)/native/etcpak/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyVendoredEtcpakEncoder" AfterTargets="Build">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode')">
+      <EtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe')">
+      <EtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EtcpakBinary)" DestinationFolder="$(OutputPath)/native/etcpak/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- ASTC is implemented by the vendored ARM astc-encoder (astcenc) C++
+       encoder (a CLI-free build of just its compressor core - see
+       native/astcenc/CMakeLists.txt), replacing the pure-managed AstcSharp
+       encoder that made this pipeline's ASTC path the bottleneck. Same
+       build/copy shape as the etcpak targets above. -->
+  <Target Name="BuildVendoredAstcencEncoder" BeforeTargets="Build">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/native/astcenc&quot; -B &quot;$(MSBuildProjectDirectory)/native/astcenc/build&quot; -DCMAKE_BUILD_TYPE=Release" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/native/astcenc/build&quot; --config Release --parallel" />
+  </Target>
+
+  <Target Name="CopyVendoredAstcencEncoderToPublish" AfterTargets="Publish">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode')">
+      <PublishedAstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe')">
+      <PublishedAstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishedAstcencBinary)" DestinationFolder="$(PublishDir)/native/astcenc/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyVendoredAstcencEncoder" AfterTargets="Build">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode')">
+      <AstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe')">
+      <AstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AstcencBinary)" DestinationFolder="$(OutputPath)/native/astcenc/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <!-- Schema-driven asset/bundle reading & writing -->
+    <PackageReference Include="AssetsTools.NET" Version="3.0.2" />
+
+    <!-- Used only to resolve inline vs. .resS Texture2D image data. The actual compressed
+         texture decoding is delegated to the Unity-specific Kyaru decoder below. -->
+    <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
+
+    <!-- Unity Texture2D decoder. The Linux native package supplies libTexture2DDecoderNative.so
+         for the ubuntu-latest runner. Kyaru's API is the same decoder used by AssetStudio and
+         exposes explicit UnityCrunch unpacking for DXT5Crunched. -->
+    <PackageReference Include="Kyaru.Texture2DDecoder" Version="0.17.1" />
+    <PackageReference Include="Kyaru.Texture2DDecoder.Linux" Version="0.2.0" />
+
+    <!-- Pure C# ASTC codec. Encoding now goes through the vendored native astcenc
+         executable instead (see native/astcenc/, NativeAstcEncoder.cs) - AstcSharp's
+         managed encoder was the bottleneck this project needed to remove. AstcSharp
+         itself is kept only for ASTC *decode* (TextureCodec.DecodeAstc), which was
+         never the slow path. -->
+    <PackageReference Include="AstcSharp" Version="3.1.0" />
+
+    <!-- Real standard/fast LZ4 block encoder+decoder (LZ4Level.L00_FAST), used only by
+         UnityFsLz4Transcoder.cs. AssetsTools.NET's own Pack() always compresses
+         through its HC path regardless of AssetBundleCompressionType, so Pack()'s
+         output is transcoded block-by-block with this afterward instead - see
+         UnityFsLz4Transcoder.cs's header comment. -->
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+  </ItemGroup>
+
+</Project>
