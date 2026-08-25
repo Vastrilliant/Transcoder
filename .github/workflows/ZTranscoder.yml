@@ -1,0 +1,100 @@
+name: ztranscoder
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag of the queue release holding input.bundle"
+        required: true
+        type: string
+
+      output_format:
+        description: "Texture output format"
+        required: false
+        default: "RGBA32"
+        type: choice
+        options:
+          - RGBA32
+          - ETC2
+          - ETC2_RGB
+          - ETC2_RGBA8
+          - ASTC_RGBA_4x4
+          - ASTC_RGBA_6x6
+          - ASTC_RGBA_8x8
+
+permissions:
+  contents: write
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache vendored etcpak build
+        uses: actions/cache@v4
+        with:
+          path: ZTranscoder/native/etcpak/build
+          key: etcpak-build-${{ runner.os }}-${{ hashFiles('ZTranscoder/native/etcpak/**') }}
+
+      - name: Cache vendored astcenc build
+        uses: actions/cache@v4
+        with:
+          path: ZTranscoder/native/astcenc/build
+          key: astcenc-build-${{ runner.os }}-${{ hashFiles('ZTranscoder/native/astcenc/**') }}
+
+      - name: Restore & build converter
+        run: dotnet build ZTranscoder/ZTranscoder.csproj -c Release -o build
+
+      - name: Fetch input.bundle from the queue release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "input.bundle" \
+            --output input.bundle
+
+      - name: Fetch original.bundle from the queue release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "original.bundle" \
+            --output original.bundle || true
+
+      - name: Run ZTranscoder
+        env:
+          OUTPUT_FORMAT: ${{ inputs.output_format }}
+        run: |
+          FORMAT="${OUTPUT_FORMAT:-RGBA32}"
+          if [ -f original.bundle ]; then
+            dotnet build/ZTranscoder.dll input.bundle output.bundle --original original.bundle "$FORMAT"
+          else
+            echo "No original.bundle on this release - running without shader restore."
+            dotnet build/ZTranscoder.dll input.bundle output.bundle "$FORMAT"
+          fi
+
+      - name: Upload output.bundle back onto the same release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.release_tag }}" output.bundle \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+      - name: Mark Done Signal
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo done > done.marker
+          gh release upload "${{ inputs.release_tag }}" done.marker \
+            --repo "${{ github.repository }}" \
+            --clobber
+
