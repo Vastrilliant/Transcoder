@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ZTranscoder</AssemblyName>
+    <RootNamespace>ZTranscoder</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <Target Name="BuildVendoredEtcpakEncoder" BeforeTargets="Build">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/native/etcpak&quot; -B &quot;$(MSBuildProjectDirectory)/native/etcpak/build&quot; -DCMAKE_BUILD_TYPE=Release" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/native/etcpak/build&quot; --config Release --parallel" />
+  </Target>
+
+  <Target Name="CopyVendoredEtcpakEncoderToPublish" AfterTargets="Publish">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode')">
+      <PublishedEtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe')">
+      <PublishedEtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishedEtcpakBinary)" DestinationFolder="$(PublishDir)/native/etcpak/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyVendoredEtcpakEncoder" AfterTargets="Build">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode')">
+      <EtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/etcpak_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe')">
+      <EtcpakBinary Include="$(MSBuildProjectDirectory)/native/etcpak/build/Release/etcpak_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EtcpakBinary)" DestinationFolder="$(OutputPath)/native/etcpak/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="BuildVendoredAstcencEncoder" BeforeTargets="Build">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/native/astcenc&quot; -B &quot;$(MSBuildProjectDirectory)/native/astcenc/build&quot; -DCMAKE_BUILD_TYPE=Release" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/native/astcenc/build&quot; --config Release --parallel" />
+  </Target>
+
+  <Target Name="CopyVendoredAstcencEncoderToPublish" AfterTargets="Publish">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode')">
+      <PublishedAstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe')">
+      <PublishedAstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishedAstcencBinary)" DestinationFolder="$(PublishDir)/native/astcenc/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyVendoredAstcencEncoder" AfterTargets="Build">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode')">
+      <AstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/astcenc_encode" />
+    </ItemGroup>
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe')">
+      <AstcencBinary Include="$(MSBuildProjectDirectory)/native/astcenc/build/Release/astcenc_encode.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AstcencBinary)" DestinationFolder="$(OutputPath)/native/astcenc/build" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="AssetsTools.NET" Version="3.0.2" />
+    <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
+    <PackageReference Include="Kyaru.Texture2DDecoder" Version="0.17.1" />
+    <PackageReference Include="Kyaru.Texture2DDecoder.Linux" Version="0.2.0" />
+    <PackageReference Include="AstcSharp" Version="3.1.0" />
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+  </ItemGroup>
+
+</Project>
